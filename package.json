@@ -1,0 +1,22 @@
+{
+  "name": "x402-reader",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A reader that is a program: fetches an article from an x402 publisher, pays the 402, prints the receipt.",
+  "type": "module",
+  "scripts": {
+    "read": "node --env-file-if-exists=.env --import tsx agent.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@x402/core": "^2.27.0",
+    "@x402/evm": "^2.27.0",
+    "@x402/fetch": "^2.27.0",
+    "viem": "^2.57.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.0"
+  }
+}

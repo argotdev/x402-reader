@@ -1,0 +1,7 @@
+# esbuild (via tsx) needs its install script to fetch its binary.
+# The rest are optional native deps with pure-JS fallbacks.
+allowBuilds:
+  esbuild: true
+  bufferutil: false
+  keccak: false
+  utf-8-validate: false
