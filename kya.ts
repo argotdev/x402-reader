@@ -79,6 +79,17 @@ export class Reader {
   readonly enabled = Boolean(API_KEY);
   private profiles = new Map<string, PublisherProfile | null>();
   private key: { publicJwk: Jwk; privateJwk: Jwk } | null = null;
+  // Parallel first-contact requests share one verification, one key, one mint per audience.
+  private inflight = new Map<string, Promise<unknown>>();
+
+  private once<T>(key: string, work: () => Promise<T>): Promise<T> {
+    let p = this.inflight.get(key) as Promise<T> | undefined;
+    if (!p) {
+      p = work().finally(() => this.inflight.delete(key));
+      this.inflight.set(key, p);
+    }
+    return p;
+  }
   /** Narration hook: called with one line each time something worth telling happens. */
   onEvent: (line: string) => void = () => {};
 
@@ -88,7 +99,11 @@ export class Reader {
   }
 
   /** The verified person this agent acts for. Created in the sandbox on first use. */
-  async principal(): Promise<string> {
+  principal(): Promise<string> {
+    return this.once("principal", () => this.loadPrincipal());
+  }
+
+  private async loadPrincipal(): Promise<string> {
     const file = path.join(ROOT, "people", `${this.person}.json`);
     const saved = await readJson<{ principal_ref: string }>(file);
     if (saved?.principal_ref) return saved.principal_ref;
@@ -115,7 +130,12 @@ export class Reader {
   }
 
   /** This agent's own signing key, generated once. Baselayer only ever sees the public half. */
-  private async agentKey() {
+  private agentKey() {
+    if (this.key) return Promise.resolve(this.key);
+    return this.once("key", () => this.loadAgentKey());
+  }
+
+  private async loadAgentKey() {
     if (this.key) return this.key;
     const file = path.join(ROOT, "agents", this.agent, "key.json");
     const saved = await readJson<{ publicJwk: Jwk; privateJwk: Jwk }>(file);
@@ -129,7 +149,12 @@ export class Reader {
   }
 
   /** Does this publisher recognise reader credentials? Cached per origin for the run. */
-  async profile(origin: string): Promise<PublisherProfile | null> {
+  profile(origin: string): Promise<PublisherProfile | null> {
+    if (this.profiles.has(origin)) return Promise.resolve(this.profiles.get(origin)!);
+    return this.once(`profile:${origin}`, () => this.loadProfile(origin));
+  }
+
+  private async loadProfile(origin: string): Promise<PublisherProfile | null> {
     if (this.profiles.has(origin)) return this.profiles.get(origin)!;
     let profile: PublisherProfile | null = null;
     try {
@@ -146,7 +171,11 @@ export class Reader {
   }
 
   /** A credential for this audience: cached until it expires, minted otherwise. */
-  async credential(audience: string, fresh = false): Promise<StoredCredential> {
+  credential(audience: string, fresh = false): Promise<StoredCredential> {
+    return this.once(`credential:${audience}:${fresh}`, () => this.loadCredential(audience, fresh));
+  }
+
+  private async loadCredential(audience: string, fresh: boolean): Promise<StoredCredential> {
     const file = path.join(ROOT, "agents", this.agent, `${audience}.json`);
     if (!fresh) {
       const saved = await readJson<StoredCredential>(file);
