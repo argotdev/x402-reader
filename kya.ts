@@ -83,6 +83,14 @@ export class Reader {
   private key: { publicJwk: Jwk; privateJwk: Jwk } | null = null;
   // Parallel first-contact requests share one verification, one key, one mint per audience.
   private inflight = new Map<string, Promise<unknown>>();
+  // Mints run one at a time: two concurrent first mints for one person have answered 409.
+  private mintQueue: Promise<unknown> = Promise.resolve();
+
+  private serialMint<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.mintQueue.then(task, task);
+    this.mintQueue = run.catch(() => undefined);
+    return run;
+  }
 
   private once<T>(key: string, work: () => Promise<T>): Promise<T> {
     let p = this.inflight.get(key) as Promise<T> | undefined;
@@ -185,11 +193,17 @@ export class Reader {
     }
     const principal_ref = await this.principal();
     const { publicJwk } = await this.agentKey();
-    const mint = await baselayer<{ credential?: string; jti: string; expires_at: string; message?: string }>("POST", "/credentials/individual", {
-      principal_ref,
-      level: "L2",
-      audience,
-      agent_key: { kty: publicJwk.kty, crv: publicJwk.crv, x: publicJwk.x, kid: publicJwk.kid },
+    const body = { principal_ref, level: "L2", audience, agent_key: { kty: publicJwk.kty, crv: publicJwk.crv, x: publicJwk.x, kid: publicJwk.kid } };
+    // Mints are serialised, and a 409 or 5xx is retried briefly: a first mint for a new person
+    // has answered 409 Resource already exists once in testing and succeeded a moment later.
+    const mint = await this.serialMint(async () => {
+      let res = await baselayer<{ credential?: string; jti: string; expires_at: string; message?: string }>("POST", "/credentials/individual", body);
+      for (let attempt = 1; attempt <= 3 && (res.status === 409 || res.status >= 500); attempt++) {
+        this.onEvent(`Mint for ${audience} answered ${res.status}; retrying`);
+        await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
+        res = await baselayer("POST", "/credentials/individual", body);
+      }
+      return res;
     });
     if (mint.status !== 201 || !mint.body.credential) throw new Error(`mint failed: ${mint.status} ${mint.body.message ?? JSON.stringify(mint.body)}`);
     const payload = JSON.parse(Buffer.from(mint.body.credential.split("~")[0].split(".")[1], "base64url").toString()) as { sub: string };

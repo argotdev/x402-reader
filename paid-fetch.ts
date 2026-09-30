@@ -128,10 +128,13 @@ export class Wallet {
     const origin = new URL(url).origin;
     let presented: { header: string; value: string; reader: string } | null = null;
     if (this.reader) {
-      try {
-        presented = await this.reader.presentation(origin);
-      } catch (error) {
-        this.reader.onEvent(`Could not present a credential to ${origin}: ${error instanceof Error ? error.message : String(error)}`);
+      for (let attempt = 0; attempt < 2 && !presented; attempt++) {
+        try {
+          presented = await this.reader.presentation(origin);
+        } catch (error) {
+          this.reader.onEvent(`Could not present a credential to ${origin}: ${error instanceof Error ? error.message : String(error)}${attempt === 0 ? "; trying once more" : "; reading anonymously"}`);
+          await new Promise((r) => setTimeout(r, 500));
+        }
       }
     }
     if (presented) headers = { ...headers, [presented.header]: presented.value };
