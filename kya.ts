@@ -8,7 +8,9 @@
  * audience and bound to the agent's own Ed25519 key. On every request it fetches a single-use
  * nonce from the publisher and signs a key binding JWT, so a copied credential is useless.
  *
- * State lives in .kya/: people/<person>.json, agents/<agent>/key.json, agents/<agent>/<audience>.json.
+ * State lives in .kya/: people/<person>.json, agents/<agent>/key.json, and cached credentials at
+ * agents/<agent>/credentials/<person>/<audience>.json (a credential names one person, so the
+ * cache is keyed by person as well as by agent and audience).
  *
  * Env: BASELAYER_API_KEY   sandbox or production key with identity and credential permissions
  *      PERSON              who the agent acts for (default alice); one fixture identity per name
@@ -172,11 +174,11 @@ export class Reader {
 
   /** A credential for this audience: cached until it expires, minted otherwise. */
   credential(audience: string, fresh = false): Promise<StoredCredential> {
-    return this.once(`credential:${audience}:${fresh}`, () => this.loadCredential(audience, fresh));
+    return this.once(`credential:${this.person}:${audience}:${fresh}`, () => this.loadCredential(audience, fresh));
   }
 
   private async loadCredential(audience: string, fresh: boolean): Promise<StoredCredential> {
-    const file = path.join(ROOT, "agents", this.agent, `${audience}.json`);
+    const file = path.join(ROOT, "agents", this.agent, "credentials", this.person, `${audience}.json`);
     if (!fresh) {
       const saved = await readJson<StoredCredential>(file);
       if (saved && new Date(saved.expires_at).getTime() - Date.now() > 60_000) return saved;

@@ -55,7 +55,15 @@ PERSON=alice pnpm read three-free-reads-without-a-login           # allowance us
 PERSON=bob pnpm read what-x402-actually-does                      # another person: a fresh allowance
 ```
 
-The publisher's `/readers` page shows one row for alice with three free reads and one paid, whichever agent made them, and one row for bob. At a second publisher the same people appear under identifiers that share nothing with these.
+The publisher's `/readers` page shows one row for alice with three free reads and one paid, whichever agent made them, and one row for bob.
+
+The same person at a second publisher, [The Delegate](../thedelegate), gets a fresh allowance and an identifier that shares nothing with the first:
+
+```bash
+SITE_URL=http://localhost:3001 PERSON=alice pnpm read whose-side-is-your-agent-on   # free read 1/2, new identifier
+```
+
+The cached credentials in `.kya/agents/<agent>/credentials/alice/` show both identifiers side by side: same issuer prefix, then nothing in common.
 
 ## Helpers
 
@@ -71,7 +79,7 @@ ask.ts          the agent: system prompt, three tools, the tool-runner loop
 paid-fetch.ts   Wallet: a fetch that identifies itself, takes free reads, pays 402s within a budget, keeps receipts
 kya.ts          Reader: the Baselayer identity, agent key, per-publisher credentials, key binding
 read.ts         the narrated single-article client
-.kya/           local state: people/<person>.json, agents/<agent>/key.json and cached credentials (gitignored)
+.kya/           local state: people/<person>.json, agents/<agent>/key.json, agents/<agent>/credentials/<person>/<audience>.json (gitignored)
 keygen.ts       test key generator
 balance.ts      USDC balance check
 SETUP.md        from nothing to a paid read
