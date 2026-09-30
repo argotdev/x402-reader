@@ -8,6 +8,7 @@ Two projects are involved. The **publisher** is the site, in `../thedailyagent`.
 
 - Node 24 or later and pnpm 11 or later. Check with `node --version` and `pnpm --version`.
 - An Anthropic API key for the agent, from <https://console.anthropic.com>. The low-level `pnpm read` works without one.
+- A Baselayer sandbox API key for the reader credential, from <https://console.baselayer.com> with the environment switched to Sandbox. Optional: without it the reader is anonymous and pays for everything.
 - A browser wallet for the human test in step 8: Coinbase Wallet, MetaMask, or Rabby. Not needed for the agent.
 
 ## 1. The network
@@ -67,7 +68,12 @@ Edit `.env`:
 ANTHROPIC_API_KEY=sk-ant-…   # the model behind pnpm ask
 SITE_URL=http://localhost:3000
 AGENT_PRIVATE_KEY=0x…        # the reader key from step 2
+BASELAYER_API_KEY=…          # sandbox key; enables the reader credential
+PERSON=alice                 # who the agent acts for; a fixture identity is created on first use
+AGENT_NAME=agent-a
 ```
+
+The first run with a Baselayer key verifies "alice" as a fixture identity in the sandbox using fake details derived from the name, and stores the resulting `principal_ref` in `.kya/people/alice.json`. No real personal data is involved. Credentials are minted per publisher and cached in `.kya/agents/<agent>/` until they expire (one hour).
 
 `.env` is gitignored. Check with `git status` that it does not appear.
 
@@ -139,7 +145,7 @@ For either run, check three things:
 2. **The explorer link** opens a transaction on Sepolia Basescan showing 0.1 USDC transferred from the reader address to `PAY_TO`. The transaction sender will be the facilitator, which is expected: it submitted the authorization and paid the gas.
 3. **The ledger** at <http://localhost:3000/ledger> shows the sale, if a store is configured. `pnpm balance` should now show 9.9 USDC.
 
-Read the same article again and you pay again. x402 has no memory of past payments; that is what the reader credential will add later.
+With a Baselayer key set, the first three priced reads in a month come back free, marked `X-Free-Reads`, because the publisher recognised the reader. The fourth pays. Run `AGENT_NAME=agent-b pnpm read …` to see a second agent for the same person draw on the same allowance, and `PERSON=bob pnpm read …` for a fresh one. The publisher's `/readers` page shows the pseudonyms and counts.
 
 ## 8. The human test: pay in the browser
 

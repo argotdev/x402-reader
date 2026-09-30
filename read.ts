@@ -5,6 +5,9 @@
  *   pnpm read what-x402-actually-does              buy an article by slug
  *   pnpm read https://thedailyagent.news/articles/what-x402-actually-does.md
  *   pnpm read what-x402-actually-does --dry-run    stop at the 402 and show the terms
+ *   pnpm read what-x402-actually-does --no-credential   anonymous: no free reads, pay every time
+ *   AGENT_NAME=agent-b pnpm read <slug>            same person, another agent: shares the allowance
+ *   PERSON=bob pnpm read <slug>                    a different person: a fresh allowance
  *   pnpm read                                      list what is for sale
  *
  * Env: SITE_URL (default https://thedailyagent.news)
@@ -16,9 +19,11 @@ import { privateKeyToAccount } from "viem/accounts";
 import { decodePaymentResponseHeader, wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import { decodePaymentRequiredHeader, decodePaymentSignatureHeader } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
+import { Reader } from "./kya.ts";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
+const anonymous = args.includes("--no-credential");
 const target = args.find((a) => !a.startsWith("--"));
 const SITE = (process.env.SITE_URL ?? "https://thedailyagent.news").replace(/\/$/, "");
 const KEY = process.env.AGENT_PRIVATE_KEY as `0x${string}` | undefined;
@@ -95,11 +100,33 @@ async function main() {
     say(dim(dryRun ? "Dry run: will stop at the 402." : "No AGENT_PRIVATE_KEY set: will stop at the 402."));
   }
 
-  const res = await doFetch(url, { headers: { accept: "text/markdown" } });
+  const headers: Record<string, string> = { accept: "text/markdown" };
+  const reader = anonymous ? null : new Reader();
+  if (reader?.enabled) {
+    reader.onEvent = (line) => say(dim(`  ${line}`));
+    say(dim(`Reading as ${reader.person} via ${reader.agent}`));
+    const presented = await reader.presentation(new URL(url).origin);
+    if (presented) {
+      headers[presented.header] = presented.value;
+      say(dim(`  Presenting reader credential …${presented.reader.slice(-8)} with a fresh nonce`));
+    } else {
+      say(dim("  This publisher does not recognise reader credentials"));
+    }
+  } else {
+    say(dim(anonymous ? "Reading anonymously" : "No BASELAYER_API_KEY: reading anonymously"));
+  }
+
+  const res = await doFetch(url, { headers });
   const body = await res.text();
   const receipt = res.headers.get("payment-response");
+  const freeReads = res.headers.get("x-free-reads");
 
-  if (res.status === 200 && receipt) {
+  if (res.status === 200 && freeReads) {
+    say(`\n${bold("Free read")} ${freeReads} this month, as a recognised reader. No payment.\n`);
+    say(body.split("\n").slice(0, 10).map((l) => `  ${l}`).join("\n"));
+  } else if (res.status === 401) {
+    say(`\n${bold("Credential rejected.")} ${body.slice(0, 300)}`);
+  } else if (res.status === 200 && receipt) {
     const r = decodePaymentResponseHeader(receipt);
     const explorer = explorers[String(r.network)];
     say(`\n${bold("Paid.")} ${dim("PAYMENT-RESPONSE")}`);

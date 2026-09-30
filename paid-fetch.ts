@@ -1,6 +1,8 @@
 /**
- * A fetch that pays. Wraps the x402 client so that a 402 is paid automatically, but only
- * within a per-run budget, and keeps the receipts.
+ * A fetch that pays, and that says who is asking. Wraps the x402 client so that a 402 is paid
+ * automatically, but only within a per-run budget, and keeps the receipts. When the publisher
+ * recognises reader credentials and this reader has one, the request carries it first, so a
+ * free read is taken before any money moves.
  */
 import { createPublicClient, formatUnits, http, type Address } from "viem";
 import { base, baseSepolia } from "viem/chains";
@@ -8,6 +10,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { decodePaymentResponseHeader, wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import { decodePaymentRequiredHeader } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
+import { Reader } from "./kya.ts";
 
 export type Receipt = {
   url: string;
@@ -32,18 +35,24 @@ const USDC: Record<string, Address> = {
 export const usd = (atomic: bigint) => `$${(Number(atomic) / 1e6).toFixed(2)}`;
 export const explorerUrl = (r: Receipt) => (EXPLORERS[r.network] ? `${EXPLORERS[r.network]}${r.transaction}` : null);
 
+export type FreeRead = { url: string; reader: string; used: string };
+
 export class Wallet {
   readonly address: string | null;
   readonly budgetAtomic: bigint;
   spentAtomic = 0n;
   readonly receipts: Receipt[] = [];
+  readonly freeReads: FreeRead[] = [];
+  /** The reader identity presented to publishers; null means anonymous. */
+  readonly reader: Reader | null;
   private payingFetch: typeof fetch | null = null;
   // Payments run one at a time. Concurrent settlements from the same payer were refused
   // by the facilitator in testing; serialising them costs a second or two and removes the retries.
   private queue: Promise<unknown> = Promise.resolve();
 
-  constructor(privateKey: `0x${string}` | undefined, budgetUsd: number) {
+  constructor(privateKey: `0x${string}` | undefined, budgetUsd: number, reader: Reader | null = null) {
     this.budgetAtomic = BigInt(Math.round(budgetUsd * 1e6));
+    this.reader = reader && reader.enabled ? reader : null;
     if (privateKey) {
       const account = privateKeyToAccount(privateKey);
       this.address = account.address;
@@ -109,18 +118,53 @@ export class Wallet {
   }
 
   /**
-   * GET a URL. Free resources come straight back. A 402 is paid if a wallet is present and
-   * the price fits the remaining budget; otherwise the 402 is returned as-is with `terms` set.
+   * GET a URL. Free resources come straight back. If the publisher recognises readers and this
+   * wallet has an identity, the request carries a credential and a free read is taken when one
+   * is left. Otherwise a 402 is paid if a wallet is present and the price fits the remaining
+   * budget; if not, the 402 is returned as-is with `terms` set.
    */
-  async get(url: string, headers: Record<string, string> = {}): Promise<{ res: Response; terms: Terms | null; receipt: Receipt | null; declined: string | null }> {
-    const first = await fetch(url, { headers });
-    if (first.status !== 402) return { res: first, terms: null, receipt: null, declined: null };
+  async get(url: string, headers: Record<string, string> = {}): Promise<{ res: Response; terms: Terms | null; receipt: Receipt | null; declined: string | null; freeRead: FreeRead | null }> {
+    // Identify, if the publisher accepts it.
+    const origin = new URL(url).origin;
+    let presented: { header: string; value: string; reader: string } | null = null;
+    if (this.reader) {
+      try {
+        presented = await this.reader.presentation(origin);
+      } catch (error) {
+        this.reader.onEvent(`Could not present a credential to ${origin}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    if (presented) headers = { ...headers, [presented.header]: presented.value };
+
+    let first = await fetch(url, { headers });
+
+    // The publisher would not accept the credential (expired, revoked, rotated key): mint afresh once.
+    if (first.status === 401 && presented && this.reader) {
+      const why = await first.clone().json().catch(() => ({})) as { code?: string };
+      this.reader.onEvent(`Credential rejected (${why.code ?? first.status}); minting a fresh one`);
+      try {
+        presented = await this.reader.presentation(origin, true);
+        if (presented) {
+          headers = { ...headers, [presented.header]: presented.value };
+          first = await fetch(url, { headers });
+        }
+      } catch (error) {
+        return { res: first, terms: null, receipt: null, declined: `credential rejected and re-mint failed: ${error instanceof Error ? error.message : String(error)}`, freeRead: null };
+      }
+    }
+
+    if (first.status === 200 && presented && first.headers.get("x-free-reads")) {
+      const freeRead = { url, reader: presented.reader, used: first.headers.get("x-free-reads")! };
+      this.freeReads.push(freeRead);
+      return { res: first, terms: null, receipt: null, declined: null, freeRead };
+    }
+    if (first.status !== 402) return { res: first, terms: null, receipt: null, declined: null, freeRead: null };
 
     const terms = Wallet.terms(first);
-    if (!terms) return { res: first, terms: null, receipt: null, declined: "402 without readable x402 terms" };
-    if (!this.payingFetch) return { res: first, terms, receipt: null, declined: "no wallet configured (AGENT_PRIVATE_KEY)" };
+    if (!terms) return { res: first, terms: null, receipt: null, declined: "402 without readable x402 terms", freeRead: null };
+    if (!this.payingFetch) return { res: first, terms, receipt: null, declined: "no wallet configured (AGENT_PRIVATE_KEY)", freeRead: null };
     if (terms.amountAtomic > this.remainingAtomic) {
-      return { res: first, terms, receipt: null, declined: `price ${usd(terms.amountAtomic)} exceeds remaining budget ${usd(this.remainingAtomic)}` };
+      return { res: first, terms, receipt: null, declined: `price ${usd(terms.amountAtomic)} exceeds remaining budget ${usd(this.remainingAtomic)}`, freeRead: null };
     }
 
     const paid = await this.serial(() => this.payingFetch!(url, { headers }));
@@ -134,6 +178,7 @@ export class Wallet {
         terms,
         receipt: null,
         declined: `payment attempted but publisher answered ${paid.status}${reason ? ` (${reason})` : ""}.${funds}`,
+        freeRead: null,
       };
     }
     const settled = decodePaymentResponseHeader(header);
@@ -146,6 +191,6 @@ export class Wallet {
     };
     this.spentAtomic += terms.amountAtomic;
     this.receipts.push(receipt);
-    return { res: paid, terms, receipt, declined: null };
+    return { res: paid, terms, receipt, declined: null, freeRead: null };
   }
 }

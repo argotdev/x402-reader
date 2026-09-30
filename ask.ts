@@ -4,9 +4,12 @@
  *   pnpm ask "What is the latest on agent payments from http://localhost:3000?"
  *   pnpm ask "Headlines on identity from the Daily Agent today" --budget 0.25
  *   pnpm ask "Summarise https://thedailyagent.news and https://example.com/news on x402"
+ *   pnpm ask "..." --no-credential                  read anonymously: pay for everything
  *
  * Env: ANTHROPIC_API_KEY   the model
  *      AGENT_PRIVATE_KEY   an EVM key holding USDC; without it, paid articles are declined
+ *      BASELAYER_API_KEY   lets the reader carry a Baselayer credential and take free reads
+ *      PERSON, AGENT_NAME  who the agent acts for, and which key it signs with
  *      SITE_URL            default publication when the request names none
  *
  * Built on the Anthropic SDK's tool runner: the model plans, calls the tools below, and
@@ -16,11 +19,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { Wallet, explorerUrl, usd } from "./paid-fetch.ts";
+import { Reader } from "./kya.ts";
 
 // ---- arguments -----------------------------------------------------------
 const argv = process.argv.slice(2);
 const budgetArg = argv.indexOf("--budget");
 const budgetUsd = budgetArg >= 0 ? Number(argv[budgetArg + 1]) : 0.5;
+const anonymous = argv.includes("--no-credential");
 const request = argv.filter((a, i) => !a.startsWith("--") && i !== budgetArg + 1).join(" ").trim();
 const DEFAULT_SITE = (process.env.SITE_URL ?? "https://thedailyagent.news").replace(/\/$/, "");
 const KEY = process.env.AGENT_PRIVATE_KEY as `0x${string}` | undefined;
@@ -38,7 +43,9 @@ const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const note = (s: string) => console.error(dim(s));
 
-const wallet = new Wallet(KEY, budgetUsd);
+const reader = anonymous ? null : new Reader();
+if (reader) reader.onEvent = (line) => note(`  ${line}`);
+const wallet = new Wallet(KEY, budgetUsd, reader);
 
 // ---- tools ---------------------------------------------------------------
 type IndexArticle = {
@@ -78,14 +85,14 @@ const listPublication = betaZodTool({
 const readArticle = betaZodTool({
   name: "read_article",
   description:
-    "Fetch one article as Markdown. Free articles come back at once. Priced articles are bought over x402 with the reader's wallet, provided the price fits the remaining budget; the result then includes a receipt. If the article cannot be bought (over budget, no wallet), the result says so and you should tell the person rather than retry. Buy only articles that matter for the request.",
+    "Fetch one article as Markdown. Free articles come back at once. For priced articles, if the publisher recognises reader credentials and this reader has free reads left this month, the article comes back free with a note of how many are used. Otherwise it is bought over x402 with the reader's wallet, provided the price fits the remaining budget; the result then includes a receipt. If the article cannot be bought (over budget, no wallet), the result says so and you should tell the person rather than retry. Read only articles that matter for the request.",
   inputSchema: z.object({
     url: z.string().describe("The article's Markdown URL from list_publication, e.g. https://thedailyagent.news/articles/<slug>.md"),
   }),
   run: async ({ url }) => {
     note(`  read_article ${url}`);
     try {
-      const { res, terms, receipt, declined } = await wallet.get(url, { accept: "text/markdown" });
+      const { res, terms, receipt, declined, freeRead } = await wallet.get(url, { accept: "text/markdown" });
       if (declined) {
         note(`    declined: ${declined}`);
         return `Not read. ${declined}.${terms ? ` Price ${usd(terms.amountAtomic)} on ${terms.network}.` : ""} Remaining budget ${usd(wallet.remainingAtomic)}.`;
@@ -93,6 +100,10 @@ const readArticle = betaZodTool({
       if (!res.ok) return `The publisher answered ${res.status} for ${url}.`;
       const text = await res.text();
       const body = text.length > 16000 ? `${text.slice(0, 16000)}\n\n[truncated after 16000 characters]` : text;
+      if (freeRead) {
+        note(`    free read ${freeRead.used} as recognised reader …${freeRead.reader.slice(-8)}`);
+        return `[FREE READ ${freeRead.used} this month, granted because this publisher recognised the reader's credential. No payment.]\n\n${body}`;
+      }
       if (receipt) {
         note(`    paid ${usd(receipt.amountAtomic)}  tx ${receipt.transaction.slice(0, 14)}…  remaining ${usd(wallet.remainingAtomic)}`);
         return `[PAID ${usd(receipt.amountAtomic)}. transaction ${receipt.transaction} on ${receipt.network}${explorerUrl(receipt) ? `, ${explorerUrl(receipt)}` : ""}. Remaining budget ${usd(wallet.remainingAtomic)}.]\n\n${body}`;
@@ -107,13 +118,17 @@ const readArticle = betaZodTool({
 
 const walletStatus = betaZodTool({
   name: "wallet",
-  description: "The reader's spending position for this run: budget, spent so far, remaining, receipts, and whether a wallet is configured at all.",
+  description: "The reader's position for this run: who the agent acts for and whether it carries a reader credential, free reads taken, budget, spent so far, remaining, receipts, and whether a wallet is configured at all.",
   inputSchema: z.object({}),
   run: async () => {
     note("  wallet");
     const balance = await wallet.usdcBalance();
     return JSON.stringify(
       {
+        identity: wallet.reader
+          ? { person: wallet.reader.person, agent: wallet.reader.agent, note: "Carries a Baselayer L2 reader credential; publishers that recognise it grant free reads per person per month." }
+          : { anonymous: true, note: "No credential: every priced article must be paid for." },
+        freeReadsTaken: wallet.freeReads.map((f) => ({ url: f.url, used: f.used })),
         configured: wallet.address !== null,
         address: wallet.address,
         usdcBalance: balance?.display ?? (wallet.address ? "unknown" : null),
@@ -133,22 +148,23 @@ const walletStatus = betaZodTool({
 const today = new Date().toISOString().slice(0, 10);
 const system = `You are a news reader working for one person. They tell you what they want to know and, usually, which publications to read. You find the relevant articles, read them, and write a briefing.
 
-Today is ${today}. If the request names no publication, use ${DEFAULT_SITE}.
+Today is ${today}. The configured publication is ${DEFAULT_SITE}: use it when the request names no publication, and when the request refers to The Daily Agent by name without giving a URL. Only go to other origins when the request gives them.
 
 How to work:
 - For each publication, call list_publication first. It shows every article with its date, summary, and price, so you can pick what is relevant before spending anything. Only if a site has no index, fall back to web_fetch on the pages the person named, or web_search if they gave a topic without sites.
-- Read what the request actually needs. Prefer free articles when they cover the topic. Buy a priced article only when it clearly matters, and never buy the same article twice. The read_article tool enforces the budget; if it declines a purchase, do not retry it. Report the reason it gave in the briefing, and if the wallet holds no USDC say plainly that it needs funding.
+- Read what the request actually needs. Prefer free articles when they cover the topic. Priced articles may still cost nothing: when a publisher recognises the reader's credential, the first few reads a month are free, and read_article says so. After that they are bought within the budget. Read a priced article only when it clearly matters, and never read the same article twice. The read_article tool enforces the budget; if it declines a purchase, do not retry it. Report the reason it gave in the briefing, and if the wallet holds no USDC say plainly that it needs funding.
 - Read articles in parallel when you have chosen several.
 
 The briefing:
 - Lead with the headlines that answer the request, newest first, each with a one- or two-sentence summary of what the article actually says, the publication, the date, and a link. Plain prose, no marketing tone.
 - If something relevant was not read because of budget or a missing wallet, say what it was and what it would have cost.
-- End with a short "Spent" section: total spent against the budget, and one line per purchase with the amount and the transaction link. If nothing was bought, say so in one line.`;
+- End with a short "Spent" section: free reads taken as a recognised reader (how many, at which publisher), then total spent against the budget with one line per purchase giving the amount and the transaction link. If nothing was bought, say so in one line.`;
 
 const client = new Anthropic();
 
 const startingBalance = await wallet.usdcBalance();
 note(`Budget ${usd(wallet.budgetAtomic)}${wallet.address ? `, paying from ${wallet.address}${startingBalance ? ` (holds ${startingBalance.display} USDC on Base Sepolia)` : ""}` : ", no wallet: paid articles will be declined"}`);
+note(wallet.reader ? `Reading as ${wallet.reader.person} via ${wallet.reader.agent}, with a Baselayer reader credential where publishers accept one` : anonymous ? "Reading anonymously (--no-credential)" : "No BASELAYER_API_KEY: reading anonymously, so no free reads");
 if (startingBalance && startingBalance.atomic === 0n) note("The wallet has no USDC. Fund it at https://faucet.circle.com (Base Sepolia) or purchases will be refused.");
 note(`Asking claude-opus-5…\n`);
 
@@ -198,4 +214,4 @@ console.log("");
 console.log(textOf(final.content).trim());
 
 console.log("");
-console.log(dim(`${bold("Spent")} ${usd(wallet.spentAtomic)} of ${usd(wallet.budgetAtomic)} across ${wallet.receipts.length} purchase${wallet.receipts.length === 1 ? "" : "s"}. ${final.usage.input_tokens + final.usage.output_tokens} tokens on the final turn.`));
+console.log(dim(`${bold("Spent")} ${usd(wallet.spentAtomic)} of ${usd(wallet.budgetAtomic)} across ${wallet.receipts.length} purchase${wallet.receipts.length === 1 ? "" : "s"}; ${wallet.freeReads.length} free read${wallet.freeReads.length === 1 ? "" : "s"} as a recognised reader. ${final.usage.input_tokens + final.usage.output_tokens} tokens on the final turn.`));
