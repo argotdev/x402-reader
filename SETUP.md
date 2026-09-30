@@ -7,7 +7,8 @@ Two projects are involved. The **publisher** is the site, in `../thedailyagent`.
 ## 0. Tools
 
 - Node 24 or later and pnpm 11 or later. Check with `node --version` and `pnpm --version`.
-- A browser wallet for the human test in step 7: Coinbase Wallet, MetaMask, or Rabby. Not needed for the agent.
+- An Anthropic API key for the agent, from <https://console.anthropic.com>. The low-level `pnpm read` works without one.
+- A browser wallet for the human test in step 8: Coinbase Wallet, MetaMask, or Rabby. Not needed for the agent.
 
 ## 1. The network
 
@@ -63,6 +64,7 @@ cp .env.example .env
 Edit `.env`:
 
 ```
+ANTHROPIC_API_KEY=sk-ant-…   # the model behind pnpm ask
 SITE_URL=http://localhost:3000
 AGENT_PRIVATE_KEY=0x…        # the reader key from step 2
 ```
@@ -115,7 +117,7 @@ UPSTASH_REDIS_REST_TOKEN=…
 
 ## 7. The paid read
 
-With the publisher running, from this project:
+With the publisher running, from this project. Start with the protocol on its own, so one payment is visible header by header:
 
 ```bash
 pnpm read                                         # what is for sale, with prices
@@ -123,7 +125,15 @@ pnpm read what-x402-actually-does --dry-run       # the 402 and its terms, no pa
 pnpm read what-x402-actually-does                 # pay 10¢ and read
 ```
 
-A successful run prints the terms from the 402, the authorization it signed, the 200, and a receipt block with a transaction hash and an explorer link. Check three things:
+Then the agent:
+
+```bash
+pnpm ask "What has the Daily Agent published about reader identity? Read whatever matters." --budget 0.30
+```
+
+It lists the publication, picks the identity articles, buys the priced ones within 30¢, and writes a briefing ending with a Spent section. Progress is on stderr, the briefing on stdout.
+
+For either run, check three things:
 
 1. **The receipt** in the terminal has a `transaction` and `payer` matching the reader address.
 2. **The explorer link** opens a transaction on Sepolia Basescan showing 0.1 USDC transferred from the reader address to `PAY_TO`. The transaction sender will be the facilitator, which is expected: it submitted the authorization and paid the gas.

@@ -2,19 +2,22 @@
   "name": "x402-reader",
   "version": "0.1.0",
   "private": true,
-  "description": "A reader that is a program: fetches an article from an x402 publisher, pays the 402, prints the receipt.",
+  "description": "An agent that reads the news for you and pays for what it reads over x402.",
   "type": "module",
   "scripts": {
-    "read": "node --env-file-if-exists=.env --import tsx agent.ts",
-    "typecheck": "tsc -p .",
+    "ask": "node --env-file-if-exists=.env --import tsx ask.ts",
+    "read": "node --env-file-if-exists=.env --import tsx read.ts",
     "keygen": "node --import tsx keygen.ts",
-    "balance": "node --env-file-if-exists=.env --import tsx balance.ts"
+    "balance": "node --env-file-if-exists=.env --import tsx balance.ts",
+    "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
     "@x402/core": "^2.27.0",
     "@x402/evm": "^2.27.0",
     "@x402/fetch": "^2.27.0",
-    "viem": "^2.57.0"
+    "viem": "^2.57.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

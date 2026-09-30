@@ -1,8 +1,6 @@
 /**
- * x402-reader: a reader that is a program.
- *
- * It asks a publisher for an article as Markdown, meets the 402, pays over x402, and prints
- * the receipt. It shares no code with the publisher; everything it knows, it learns from HTTP.
+ * The protocol, step by step. Not the agent (that is ask.ts): this fetches one article,
+ * narrates the 402 terms, pays, and prints the receipt, so the exchange is visible.
  *
  *   pnpm read what-x402-actually-does              buy an article by slug
  *   pnpm read https://thedailyagent.news/articles/what-x402-actually-does.md

@@ -1,8 +1,10 @@
 # x402-reader
 
-A reader that is a program. It asks a publisher for an article as Markdown, meets the 402, pays over [x402](https://x402.org), and prints the receipt, narrating each step. It shares no code with the publisher; everything it knows, it learns from HTTP.
+An agent that reads the news for you and pays for what it reads.
 
-Built as the reader half of [The Daily Agent](https://thedailyagent.news) demo, but any x402 publisher works for full URLs.
+You tell it what you want to know and which publications to read. It lists what each one offers, picks the relevant articles, buys the priced ones over [x402](https://x402.org) within a budget you set, and writes a briefing with links and receipts. It shares no code with any publisher; everything it knows, it learns over HTTP.
+
+Built as the reader half of [The Daily Agent](https://thedailyagent.news) demo. The agent loop is the Anthropic SDK's tool runner running `claude-opus-5`; the tools are three small functions in `ask.ts`.
 
 ## Run it
 
@@ -10,45 +12,34 @@ First time? [SETUP.md](SETUP.md) goes from nothing to a paid read: wallets, test
 
 ```bash
 pnpm install
-cp .env.example .env        # set SITE_URL and, to pay, AGENT_PRIVATE_KEY
+cp .env.example .env     # ANTHROPIC_API_KEY, AGENT_PRIVATE_KEY, SITE_URL
 
+pnpm ask "What is the latest on agent payments from https://thedailyagent.news?"
+pnpm ask "Headlines on identity from the Daily Agent today" --budget 0.25
+pnpm ask "Compare what https://thedailyagent.news and https://example.com/news say about x402"
+```
+
+`--budget` caps spending for the run in dollars (default 0.50). Without `AGENT_PRIVATE_KEY` the agent still runs, reads everything free, and tells you what it could not buy and for how much.
+
+Progress goes to stderr (which tool is running, what was paid); the briefing goes to stdout, so `pnpm ask "..." > briefing.md` works.
+
+## What it does
+
+1. **Discovers.** For each publication named in the request it calls `list_publication`, which reads the site's `articles.json` (or `llms.txt`): every article with date, summary, section, and price. Sites without an index are read with Anthropic's web fetch tool instead.
+2. **Chooses.** The model picks what answers the request, preferring free articles when they cover it and buying priced ones only when they matter.
+3. **Reads and pays.** `read_article` fetches the Markdown. On a 402 it checks the price against the remaining budget, signs an EIP-3009 authorization for exactly that amount, retries with `PAYMENT-SIGNATURE`, and records the receipt from `PAYMENT-RESPONSE`. Over budget or no wallet: it declines and says so.
+4. **Briefs.** Headlines newest first with a summary of what each article says, publication, date, and link. Then what was not read and why. Then a "Spent" section with the total and one transaction link per purchase.
+
+Refusal fallbacks are on: if the model declines a request on policy grounds the API reruns it on a fallback model inside the same call.
+
+## The protocol, step by step
+
+`pnpm read` is the low-level companion: no model, one article, every header printed.
+
+```bash
 pnpm read                                    # list what is for sale
 pnpm read what-x402-actually-does --dry-run  # stop at the 402 and print the terms
 pnpm read what-x402-actually-does            # pay and read
-pnpm read https://thedailyagent.news/articles/a-wallet-is-not-a-reader.md
-SITE_URL=http://localhost:3000 pnpm read what-x402-actually-does   # against a local publisher
-```
-
-`AGENT_PRIVATE_KEY` is an EVM key holding USDC on the publisher's network. The Daily Agent settles on Base Sepolia while in test; get test USDC from [Circle's faucet](https://faucet.circle.com). Without a key the reader stops at the 402 and shows how to fund one.
-
-## What it prints
-
-```
-GET https://thedailyagent.news/articles/what-x402-actually-does.md  Accept: text/markdown
-402 Payment Required  14 ms
-  PAYMENT-REQUIRED  scheme exact, network eip155:84532
-  price             100000 units of 0x036CbD…CF7e (USDC, 6 decimals) = $0.10
-  pay to            0x…
-  offer good for    120s
-
-Signed an EIP-3009 authorization: 100000 units from 0x… to 0x…, valid until 14:03:11 UTC
-  Nothing has moved yet. The server hands this to a facilitator to verify and settle.
-
-GET https://thedailyagent.news/articles/what-x402-actually-does.md  + PAYMENT-SIGNATURE
-200 OK  1840 ms
-
-Paid. PAYMENT-RESPONSE
-  transaction  0x…
-  explorer     https://sepolia.basescan.org/tx/0x…
-  payer        0x…
-  network      eip155:84532
-
-The article
-  # What x402 actually does
-  ...
-
-Ledger https://thedailyagent.news/ledger
-  1 sale recorded, including this one.
 ```
 
 ## Helpers
@@ -58,9 +49,16 @@ pnpm keygen                 # a fresh test key: prints address and private key o
 pnpm balance [0xAddress]    # USDC and ETH balance on Base Sepolia
 ```
 
-## How it works
+## Files
 
-One file, `agent.ts`. The x402 client from `@x402/fetch` wraps `fetch`: on a 402 it reads the terms from `PAYMENT-REQUIRED`, has the EVM scheme sign an EIP-3009 authorization for exactly that amount, and retries with `PAYMENT-SIGNATURE`. A logging wrapper around `fetch` prints each request and decodes the headers so the exchange is visible. The slug shortcut, the listing, and the ledger check assume The Daily Agent's layout; a full URL to any x402 resource skips all three.
+```
+ask.ts          the agent: system prompt, three tools, the tool-runner loop
+paid-fetch.ts   Wallet: a fetch that pays 402s within a budget and keeps receipts
+read.ts         the narrated single-article client
+keygen.ts       test key generator
+balance.ts      USDC balance check
+SETUP.md        from nothing to a paid read
+```
 
 ## Next
 
