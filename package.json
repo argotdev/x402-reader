@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "read": "node --env-file-if-exists=.env --import tsx agent.ts",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "keygen": "node --import tsx keygen.ts",
+    "balance": "node --env-file-if-exists=.env --import tsx balance.ts"
   },
   "dependencies": {
     "@x402/core": "^2.27.0",

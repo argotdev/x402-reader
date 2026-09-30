@@ -6,6 +6,8 @@ Built as the reader half of [The Daily Agent](https://thedailyagent.news) demo, 
 
 ## Run it
 
+First time? [SETUP.md](SETUP.md) goes from nothing to a paid read: wallets, test USDC, the network, the publisher's configuration.
+
 ```bash
 pnpm install
 cp .env.example .env        # set SITE_URL and, to pay, AGENT_PRIVATE_KEY
@@ -47,6 +49,13 @@ The article
 
 Ledger https://thedailyagent.news/ledger
   1 sale recorded, including this one.
+```
+
+## Helpers
+
+```bash
+pnpm keygen                 # a fresh test key: prints address and private key once
+pnpm balance [0xAddress]    # USDC and ETH balance on Base Sepolia
 ```
 
 ## How it works
