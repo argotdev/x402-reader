@@ -111,10 +111,13 @@ const walletStatus = betaZodTool({
   inputSchema: z.object({}),
   run: async () => {
     note("  wallet");
+    const balance = await wallet.usdcBalance();
     return JSON.stringify(
       {
         configured: wallet.address !== null,
         address: wallet.address,
+        usdcBalance: balance?.display ?? (wallet.address ? "unknown" : null),
+        note: balance && balance.atomic === 0n ? "The wallet holds no USDC, so no purchase can settle until it is funded." : undefined,
         budget: usd(wallet.budgetAtomic),
         spent: usd(wallet.spentAtomic),
         remaining: usd(wallet.remainingAtomic),
@@ -134,7 +137,7 @@ Today is ${today}. If the request names no publication, use ${DEFAULT_SITE}.
 
 How to work:
 - For each publication, call list_publication first. It shows every article with its date, summary, and price, so you can pick what is relevant before spending anything. Only if a site has no index, fall back to web_fetch on the pages the person named, or web_search if they gave a topic without sites.
-- Read what the request actually needs. Prefer free articles when they cover the topic. Buy a priced article only when it clearly matters, and never buy the same article twice. The read_article tool enforces the budget; if it declines a purchase, say so in the briefing rather than retrying.
+- Read what the request actually needs. Prefer free articles when they cover the topic. Buy a priced article only when it clearly matters, and never buy the same article twice. The read_article tool enforces the budget; if it declines a purchase, do not retry it. Report the reason it gave in the briefing, and if the wallet holds no USDC say plainly that it needs funding.
 - Read articles in parallel when you have chosen several.
 
 The briefing:
@@ -144,7 +147,9 @@ The briefing:
 
 const client = new Anthropic();
 
-note(`Budget ${usd(wallet.budgetAtomic)}${wallet.address ? `, paying from ${wallet.address}` : ", no wallet: paid articles will be declined"}`);
+const startingBalance = await wallet.usdcBalance();
+note(`Budget ${usd(wallet.budgetAtomic)}${wallet.address ? `, paying from ${wallet.address}${startingBalance ? ` (holds ${startingBalance.display} USDC on Base Sepolia)` : ""}` : ", no wallet: paid articles will be declined"}`);
+if (startingBalance && startingBalance.atomic === 0n) note("The wallet has no USDC. Fund it at https://faucet.circle.com (Base Sepolia) or purchases will be refused.");
 note(`Asking claude-opus-5…\n`);
 
 const runner = client.beta.messages.toolRunner({

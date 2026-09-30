@@ -162,7 +162,7 @@ Not for now, but so the differences are known:
 
 ## Troubleshooting
 
-**`402` after the agent tried to pay.** The body says why. Usually the reader has no USDC on that network (`pnpm balance`), or the reader and publisher disagree on the network. Both should say `eip155:84532`.
+**`402` after the agent tried to pay** ("payment attempted but publisher answered 402"). The decline message now includes the publisher's reason and the wallet's USDC balance. Almost always the reader holds no USDC on that network: run `pnpm balance` and fund the address at the faucet (step 3). Otherwise check that reader and publisher agree on the network; both should say `eip155:84532`.
 
 **`502` with a facilitator error.** The facilitator is unreachable or rejected the request. Check `X402_FACILITATOR_URL` and that the network is one it supports; the public one supports Base Sepolia.
 
