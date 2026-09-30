@@ -9,7 +9,8 @@
     "read": "node --env-file-if-exists=.env --import tsx read.ts",
     "keygen": "node --import tsx keygen.ts",
     "balance": "node --env-file-if-exists=.env --import tsx balance.ts",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "demo": "./demo.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",

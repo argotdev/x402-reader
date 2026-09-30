@@ -10,7 +10,7 @@ Built as the reader half of [The Daily Agent](https://thedailyagent.news) demo. 
 
 ## Run it
 
-First time? [SETUP.md](SETUP.md) goes from nothing to a paid read: wallets, test USDC, the network, the publisher's configuration.
+First time? [SETUP.md](SETUP.md) goes from nothing to a paid read: wallets, test USDC, the network, the publisher's configuration. Presenting? [DEMO.md](DEMO.md) is the run of show, and `PERSON=<fresh-name> pnpm demo` drives the command-line acts.
 
 ```bash
 pnpm install
