@@ -38,6 +38,9 @@ export class Wallet {
   spentAtomic = 0n;
   readonly receipts: Receipt[] = [];
   private payingFetch: typeof fetch | null = null;
+  // Payments run one at a time. Concurrent settlements from the same payer were refused
+  // by the facilitator in testing; serialising them costs a second or two and removes the retries.
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(privateKey: `0x${string}` | undefined, budgetUsd: number) {
     this.budgetAtomic = BigInt(Math.round(budgetUsd * 1e6));
@@ -89,6 +92,12 @@ export class Wallet {
     }
   }
 
+  private serial<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(task, task);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
   /** Decode the price from a 402 without paying. */
   static terms(res: Response): Terms | null {
     const header = res.headers.get("payment-required");
@@ -114,7 +123,7 @@ export class Wallet {
       return { res: first, terms, receipt: null, declined: `price ${usd(terms.amountAtomic)} exceeds remaining budget ${usd(this.remainingAtomic)}` };
     }
 
-    const paid = await this.payingFetch(url, { headers });
+    const paid = await this.serial(() => this.payingFetch!(url, { headers }));
     const header = paid.headers.get("payment-response");
     if (paid.status !== 200 || !header) {
       const reason = paid.status === 402 ? await Wallet.reason(paid) : null;
