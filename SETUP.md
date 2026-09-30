@@ -73,7 +73,7 @@ PERSON=alice                 # who the agent acts for; a fixture identity is cre
 AGENT_NAME=agent-a
 ```
 
-The first run with a Baselayer key verifies "alice" as a fixture identity in the sandbox using fake details derived from the name, and stores the resulting `principal_ref` in `.kya/people/alice.json`. No real personal data is involved. Credentials are minted per publisher and cached in `.kya/agents/<agent>/` until they expire (one hour).
+The first run with a Baselayer key verifies "alice" as a fixture identity in the sandbox using fake details from `personas.json`, and stores the resulting `principal_ref` in `.kya/people/alice.json`. No real personal data is involved. Credentials are minted per publisher and cached under `.kya/agents/<agent>/credentials/<person>/` until they expire (one hour). `pnpm baselayer people` shows the identities from Baselayer's side; in the Baselayer console, switch the environment to Sandbox to see the same.
 
 `.env` is gitignored. Check with `git status` that it does not appear.
 

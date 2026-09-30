@@ -6,8 +6,8 @@
  *   pnpm read https://thedailyagent.news/articles/what-x402-actually-does.md
  *   pnpm read what-x402-actually-does --dry-run    stop at the 402 and show the terms
  *   pnpm read what-x402-actually-does --no-credential   anonymous: no free reads, pay every time
- *   AGENT_NAME=agent-b pnpm read <slug>            same person, another agent: shares the allowance
- *   PERSON=bob pnpm read <slug>                    a different person: a fresh allowance
+ *   pnpm read --as alice --agent agent-b <slug>    same person, another agent: shares the allowance
+ *   pnpm read --as bob <slug>                      a different person: a fresh allowance
  *   pnpm read                                      list what is for sale
  *
  * Env: SITE_URL (default https://thedailyagent.news)
@@ -20,10 +20,11 @@ import { decodePaymentResponseHeader, wrapFetchWithPayment, x402Client } from "@
 import { decodePaymentRequiredHeader, decodePaymentSignatureHeader } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { Reader } from "./kya.ts";
+import { selectPersona } from "./personas.ts";
 
-const args = process.argv.slice(2);
+const { selection, rest: args } = await selectPersona(process.argv.slice(2));
 const dryRun = args.includes("--dry-run");
-const anonymous = args.includes("--no-credential");
+const anonymous = selection.anonymous;
 const target = args.find((a) => !a.startsWith("--"));
 const SITE = (process.env.SITE_URL ?? "https://thedailyagent.news").replace(/\/$/, "");
 const KEY = process.env.AGENT_PRIVATE_KEY as `0x${string}` | undefined;
@@ -48,7 +49,7 @@ async function listForSale() {
     say(`  ${(a.price ?? "free").padEnd(6)} ${a.slug.padEnd(38)} ${dim(a.title)}`);
   }
   if (data.payment.protocol === "none") say(dim("\nThe paywall is off at this site; everything is free."));
-  say(dim("\nusage: pnpm read <slug|url> [--dry-run]"));
+  say(dim("\nusage: pnpm read [--as <persona>] [--agent <name>] <slug|url> [--dry-run] [--no-credential]"));
 }
 
 function loggingFetch(inner: typeof fetch): typeof fetch {
@@ -101,7 +102,7 @@ async function main() {
   }
 
   const headers: Record<string, string> = { accept: "text/markdown" };
-  const reader = anonymous ? null : new Reader();
+  const reader = anonymous ? null : new Reader(selection.person, selection.agent, selection.persona?.name);
   if (reader?.enabled) {
     reader.onEvent = (line) => say(dim(`  ${line}`));
     say(dim(`Reading as ${reader.person} via ${reader.agent}`));

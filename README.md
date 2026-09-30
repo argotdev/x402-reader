@@ -65,6 +65,34 @@ SITE_URL=http://localhost:3001 PERSON=alice pnpm read whose-side-is-your-agent-o
 
 The cached credentials in `.kya/agents/<agent>/credentials/alice/` show both identifiers side by side: same issuer prefix, then nothing in common.
 
+## Personas
+
+`personas.json` is a roster of invented people and the agents they send. Pick one with `--as`, and an agent with `--agent`; without flags the reader acts for `PERSON` (default alice) through that persona's first agent.
+
+```bash
+pnpm ask --as bob "..."                        # a different person: own allowances, unrelated identifiers
+pnpm read --as alice --agent agent-b <slug>    # the same person through another agent: one allowance
+pnpm read --as demo-oct1 <slug>                # any name works; a suffix on a roster name inherits its details
+pnpm personas                                  # every persona: verification, agents, identifiers, and what each publisher knows
+```
+
+`pnpm personas` matches each persona's identifiers against the readers tables of the publishers in `PUBLISHERS` (default: both demo sites), so you can see, per person, per site: free reads used, paid reads, wallets. No names cross that line in either direction.
+
+## The issuer's view
+
+`pnpm baselayer` shows what Baselayer holds for this organisation. Needs `BASELAYER_API_KEY`; the console at <https://console.baselayer.com> shows the same, once the environment switch is set to Sandbox.
+
+```bash
+pnpm baselayer people                          # everyone verified, with the local persona name where known
+pnpm baselayer person alice                    # one identity: state, attributes, submissions, credentials
+pnpm baselayer credentials --person alice      # issuance records; also --audience, --state ACTIVE|EXPIRED|REVOKED
+pnpm baselayer audit alice                     # the append-only log: registration, issuances, revocations
+pnpm baselayer revoke <jti>                    # kill a credential
+pnpm baselayer issuer                          # the public DID document, signing key, status list
+```
+
+Revocation is the demo's twist: revoke a persona's credential, and on the next read the publisher refuses it as `REVOKED` (it checks the issuer's status list, which updates within a few minutes) and the reader mints a fresh one.
+
 ## Helpers
 
 ```bash
@@ -76,6 +104,8 @@ pnpm balance [0xAddress]    # USDC and ETH balance on Base Sepolia
 
 ```
 ask.ts          the agent: system prompt, three tools, the tool-runner loop
+personas.ts     the roster, --as/--agent parsing, and the pnpm personas listing
+baselayer.ts    the issuer's view: people, credentials, audit log, revocation
 paid-fetch.ts   Wallet: a fetch that identifies itself, takes free reads, pays 402s within a budget, keeps receipts
 kya.ts          Reader: the Baselayer identity, agent key, per-publisher credentials, key binding
 read.ts         the narrated single-article client

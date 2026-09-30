@@ -61,12 +61,12 @@ async function baselayer<T>(method: string, route: string, body?: unknown): Prom
 }
 
 /** Deterministic fake details for a named person. Sandbox accepts them as a fixture identity. */
-function fixtureIdentity(person: string) {
+function fixtureIdentity(person: string, displayName?: string) {
   const digits = createHash("sha256").update(person).digest("hex").replace(/\D/g, "").padEnd(16, "7");
-  const first = person.charAt(0).toUpperCase() + person.slice(1).toLowerCase();
+  const [first = person.charAt(0).toUpperCase() + person.slice(1).toLowerCase(), ...restName] = (displayName ?? "").split(" ").filter(Boolean);
   return {
     first_name: first,
-    last_name: "Reader",
+    last_name: restName.join(" ") || "Reader",
     dob: `198${digits[0]}-0${(Number(digits[1]) % 9) + 1}-1${digits[2]}`,
     phone_number: `+1212555${digits.slice(3, 7)}`,
     email: `${person.toLowerCase()}@example.com`,
@@ -103,9 +103,13 @@ export class Reader {
   /** Narration hook: called with one line each time something worth telling happens. */
   onEvent: (line: string) => void = () => {};
 
-  constructor(person = PERSON, agent = AGENT_NAME) {
+  /** Display name for the fixture identity, e.g. from personas.json. */
+  displayName?: string;
+
+  constructor(person = PERSON, agent = AGENT_NAME, displayName?: string) {
     this.person = person;
     this.agent = agent;
+    this.displayName = displayName;
   }
 
   /** The verified person this agent acts for. Created in the sandbox on first use. */
@@ -122,7 +126,7 @@ export class Reader {
     const submit = await baselayer<{ submission_id: string; state: string }>("POST", "/identity_submissions/consumer", {
       idempotency_key: `x402-reader:${this.person}`,
       reference_id: `x402-reader ${this.person}`,
-      consumer: fixtureIdentity(this.person),
+      consumer: fixtureIdentity(this.person, this.displayName),
     });
     if (submit.status !== 202 && submit.status !== 409) throw new Error(`identity submission failed: ${submit.status} ${JSON.stringify(submit.body)}`);
     const id = submit.body.submission_id;

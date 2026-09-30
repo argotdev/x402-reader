@@ -4,6 +4,8 @@
  *   pnpm ask "What is the latest on agent payments from http://localhost:3000?"
  *   pnpm ask "Headlines on identity from the Daily Agent today" --budget 0.25
  *   pnpm ask "Summarise https://thedailyagent.news and https://example.com/news on x402"
+ *   pnpm ask --as bob "..."                          act for another persona (see personas.json)
+ *   pnpm ask --as alice --agent agent-b "..."         the same person through a different agent
  *   pnpm ask "..." --no-credential                  read anonymously: pay for everything
  *
  * Env: ANTHROPIC_API_KEY   the model
@@ -20,18 +22,19 @@ import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { Wallet, explorerUrl, usd } from "./paid-fetch.ts";
 import { Reader } from "./kya.ts";
+import { selectPersona } from "./personas.ts";
 
 // ---- arguments -----------------------------------------------------------
-const argv = process.argv.slice(2);
+const { selection, rest: argv } = await selectPersona(process.argv.slice(2));
 const budgetArg = argv.indexOf("--budget");
 const budgetUsd = budgetArg >= 0 ? Number(argv[budgetArg + 1]) : 0.5;
-const anonymous = argv.includes("--no-credential");
+const anonymous = selection.anonymous;
 const request = argv.filter((a, i) => !a.startsWith("--") && i !== budgetArg + 1).join(" ").trim();
 const DEFAULT_SITE = (process.env.SITE_URL ?? "https://thedailyagent.news").replace(/\/$/, "");
 const KEY = process.env.AGENT_PRIVATE_KEY as `0x${string}` | undefined;
 
 if (!request) {
-  console.error('usage: pnpm ask "<what you want to know, and from which sites>" [--budget 0.50]');
+  console.error('usage: pnpm ask [--as <persona>] [--agent <name>] [--no-credential] "<what you want to know, and from which sites>" [--budget 0.50]');
   process.exit(1);
 }
 if (Number.isNaN(budgetUsd) || budgetUsd < 0) {
@@ -43,7 +46,7 @@ const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const note = (s: string) => console.error(dim(s));
 
-const reader = anonymous ? null : new Reader();
+const reader = anonymous ? null : new Reader(selection.person, selection.agent, selection.persona?.name);
 if (reader) reader.onEvent = (line) => note(`  ${line}`);
 const wallet = new Wallet(KEY, budgetUsd, reader);
 

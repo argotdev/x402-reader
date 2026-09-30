@@ -10,7 +10,7 @@ Two publishers, one reader, about fifteen minutes. Everything runs from this dir
 
 1. `.env` here has `ANTHROPIC_API_KEY`, `AGENT_PRIVATE_KEY`, `BASELAYER_API_KEY`, and `SITE_URL=https://www.thedailyagent.news`.
 2. The reader wallet holds test USDC: `pnpm balance`. Ten cents' worth of articles per act; a dollar covers the whole demo.
-3. **Pick a fresh person for this run**, for example `export PERSON=demo-oct` with today's date. Free reads are counted per person per month, so a name that has already been used will start with its allowance spent. A new name costs nothing: the first read verifies a fixture identity in the Baselayer sandbox.
+3. **Pick a fresh person for this run**, for example `export PERSON=demo-oct1` with today's date. Free reads are counted per person per month, so a name that has already been used will start with its allowance spent. A new name costs nothing: the first read verifies a fixture identity in the Baselayer sandbox. `pnpm personas` shows who has been used and what each publisher knows about them.
 4. Open in browser tabs, in this order: Daily Agent front page, Delegate front page, Daily Agent `/ledger`, Daily Agent `/readers`, Delegate `/readers`, and a Sepolia Basescan tab.
 5. Credentials live one hour. If a demo runs long the agent re-mints on its own.
 
@@ -73,6 +73,18 @@ Two identifiers for the same person. Same issuer prefix, then nothing in common.
 
 Point to make: stable where the reader wants continuity, unlinkable where they do not. A wallet address and an email address both fail this test.
 
+## Act 5b. The issuer's side
+
+```bash
+pnpm baselayer people                 # the fixture people, including today's
+pnpm baselayer audit $PERSON          # registration, then one issuance per publisher
+pnpm personas                         # the same person as each publisher sees them
+```
+
+Point to make: three parties, three views. The issuer knows who the person is and which publishers it minted for, not what they read. Each publisher knows what an anonymous regular read, not who they are. The reader holds the only keys.
+
+Optional twist, if there is time: `pnpm baselayer revoke <jti>` on one of today's credentials, wait a few minutes for the status list, and read again. The publisher refuses with `REVOKED` and the agent mints afresh.
+
 ## Act 6. The agent
 
 Now the whole thing at once, from a sentence:
@@ -94,6 +106,7 @@ Points to make: the person asked a question. Discovery, choice, identity, paymen
 | Two parallel purchases fail, then succeed on retry | Old build. Pull; payments are serialised now. |
 | Credential rejected with `AUDIENCE_MISMATCH` | The site's advertised audience changed since the credential was cached. Delete `.kya/agents/*/credentials/$PERSON/` and rerun. |
 | The agent goes to the wrong site | Name the sites by URL in the request. |
+| Baselayer console looks empty | Switch its environment dropdown to Sandbox; the key in `.env` is a sandbox key. |
 | Explorer shows the transaction but the ledger does not | Refresh; settlement and the ledger write are a second or two apart. |
 
 ## Resetting between demos

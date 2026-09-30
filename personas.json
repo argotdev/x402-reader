@@ -1,0 +1,22 @@
+{
+  "alice": {
+    "name": "Alice Reader",
+    "about": "A researcher who sends two agents out: one on her laptop, one running in the cloud. Both should count as her.",
+    "agents": ["agent-a", "agent-b"]
+  },
+  "bob": {
+    "name": "Bob Reader",
+    "about": "A colleague of Alice's. A different person, so a different allowance and unrelated identifiers everywhere.",
+    "agents": ["agent-a"]
+  },
+  "carol": {
+    "name": "Carol Reader",
+    "about": "A procurement lead whose agent buys for work. Reads business pieces and pays without hesitation.",
+    "agents": ["procurement-bot"]
+  },
+  "demo": {
+    "name": "Demo Reader",
+    "about": "A throwaway for live demos. Rename with a date suffix (demo-oct1) for a fresh monthly allowance.",
+    "agents": ["agent-a", "agent-b"]
+  }
+}

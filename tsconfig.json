@@ -8,7 +8,8 @@
     "skipLibCheck": true,
     "types": ["node"],
     "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
     "rewriteRelativeImportExtensions": true
   },
-  "include": ["ask.ts", "read.ts", "paid-fetch.ts", "keygen.ts", "balance.ts"]
+  "include": ["ask.ts", "read.ts", "paid-fetch.ts", "kya.ts", "personas.ts", "baselayer.ts", "keygen.ts", "balance.ts"]
 }
