@@ -12,7 +12,8 @@
     "typecheck": "tsc -p .",
     "demo": "./demo.sh",
     "personas": "node --env-file-if-exists=.env --import tsx personas.ts",
-    "baselayer": "node --env-file-if-exists=.env --import tsx baselayer.ts"
+    "baselayer": "node --env-file-if-exists=.env --import tsx baselayer.ts",
+    "report": "node --env-file-if-exists=.env --import tsx report.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",

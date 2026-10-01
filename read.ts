@@ -21,6 +21,7 @@ import { decodePaymentRequiredHeader, decodePaymentSignatureHeader } from "@x402
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { Reader } from "./kya.ts";
 import { selectPersona } from "./personas.ts";
+import { appendHistory } from "./history.ts";
 
 const { selection, rest: args } = await selectPersona(process.argv.slice(2));
 const dryRun = args.includes("--dry-run");
@@ -102,12 +103,14 @@ async function main() {
   }
 
   const headers: Record<string, string> = { accept: "text/markdown" };
+  let presentedReader: string | null = null;
   const reader = anonymous ? null : new Reader(selection.person, selection.agent, selection.persona?.name);
   if (reader?.enabled) {
     reader.onEvent = (line) => say(dim(`  ${line}`));
     say(dim(`Reading as ${reader.person} via ${reader.agent}`));
     const presented = await reader.presentation(new URL(url).origin);
     if (presented) {
+      presentedReader = presented.reader;
       headers[presented.header] = presented.value;
       say(dim(`  Presenting reader credential …${presented.reader.slice(-8)} with a fresh nonce`));
     } else {
@@ -122,9 +125,11 @@ async function main() {
   const receipt = res.headers.get("payment-response");
   const freeReads = res.headers.get("x-free-reads");
 
+  const identity = { person: selection.person, agent: selection.agent, url, reader: presentedReader };
   if (res.status === 200 && freeReads) {
     say(`\n${bold("Free read")} ${freeReads} this month, as a recognised reader. No payment.\n`);
     say(body.split("\n").slice(0, 10).map((l) => `  ${l}`).join("\n"));
+    await appendHistory({ ...identity, access: "free-read", freeReadsUsed: freeReads });
   } else if (res.status === 401) {
     say(`\n${bold("Credential rejected.")} ${body.slice(0, 300)}`);
   } else if (res.status === 200 && receipt) {
@@ -137,10 +142,13 @@ async function main() {
     say(`\n${bold("The article")}\n`);
     say(body.split("\n").slice(0, 14).map((l) => `  ${l}`).join("\n"));
     say(dim(`\n  … ${body.split(/\s+/).length} words in total.`));
+    const offer = (() => { try { const h = res.headers.get("payment-required"); return h ? (decodePaymentRequiredHeader(h).accepts[0] as unknown as { amount?: string }).amount : undefined; } catch { return undefined; } })();
+    await appendHistory({ ...identity, access: "paid", amountAtomic: offer, transaction: r.transaction, network: String(r.network) });
     await checkLedger(r.transaction);
   } else if (res.status === 200) {
     say(`\n${bold("Free.")} No payment was needed.\n`);
     say(body.split("\n").slice(0, 10).map((l) => `  ${l}`).join("\n"));
+    await appendHistory({ ...identity, access: "free" });
   } else if (res.status === 402) {
     say(`\n${bold("Stopped at the paywall.")}`);
     if (!KEY) say("  Set AGENT_PRIVATE_KEY to a key holding USDC on that network to pay. Test USDC: https://faucet.circle.com");

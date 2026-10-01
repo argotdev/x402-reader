@@ -48,7 +48,7 @@ const note = (s: string) => console.error(dim(s));
 
 const reader = anonymous ? null : new Reader(selection.person, selection.agent, selection.persona?.name);
 if (reader) reader.onEvent = (line) => note(`  ${line}`);
-const wallet = new Wallet(KEY, budgetUsd, reader);
+const wallet = new Wallet(KEY, budgetUsd, reader, { person: selection.person, agent: selection.agent });
 
 // ---- tools ---------------------------------------------------------------
 type IndexArticle = {

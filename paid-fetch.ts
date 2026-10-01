@@ -11,6 +11,7 @@ import { decodePaymentResponseHeader, wrapFetchWithPayment, x402Client } from "@
 import { decodePaymentRequiredHeader } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { Reader } from "./kya.ts";
+import { appendHistory } from "./history.ts";
 
 export type Receipt = {
   url: string;
@@ -45,14 +46,17 @@ export class Wallet {
   readonly freeReads: FreeRead[] = [];
   /** The reader identity presented to publishers; null means anonymous. */
   readonly reader: Reader | null;
+  /** Who is reading, for the local history, whether or not a credential is presented. */
+  readonly identity: { person: string; agent: string };
   private payingFetch: typeof fetch | null = null;
   // Payments run one at a time. Concurrent settlements from the same payer were refused
   // by the facilitator in testing; serialising them costs a second or two and removes the retries.
   private queue: Promise<unknown> = Promise.resolve();
 
-  constructor(privateKey: `0x${string}` | undefined, budgetUsd: number, reader: Reader | null = null) {
+  constructor(privateKey: `0x${string}` | undefined, budgetUsd: number, reader: Reader | null = null, identity?: { person: string; agent: string }) {
     this.budgetAtomic = BigInt(Math.round(budgetUsd * 1e6));
     this.reader = reader && reader.enabled ? reader : null;
+    this.identity = identity ?? { person: reader?.person ?? "anonymous", agent: reader?.agent ?? "agent" };
     if (privateKey) {
       const account = privateKeyToAccount(privateKey);
       this.address = account.address;
@@ -159,9 +163,13 @@ export class Wallet {
     if (first.status === 200 && presented && first.headers.get("x-free-reads")) {
       const freeRead = { url, reader: presented.reader, used: first.headers.get("x-free-reads")! };
       this.freeReads.push(freeRead);
+      await appendHistory({ ...this.identity, url, access: "free-read", freeReadsUsed: freeRead.used, reader: presented.reader });
       return { res: first, terms: null, receipt: null, declined: null, freeRead };
     }
-    if (first.status !== 402) return { res: first, terms: null, receipt: null, declined: null, freeRead: null };
+    if (first.status !== 402) {
+      if (first.status === 200) await appendHistory({ ...this.identity, url, access: "free", reader: presented?.reader ?? null });
+      return { res: first, terms: null, receipt: null, declined: null, freeRead: null };
+    }
 
     const terms = Wallet.terms(first);
     if (!terms) return { res: first, terms: null, receipt: null, declined: "402 without readable x402 terms", freeRead: null };
@@ -194,6 +202,7 @@ export class Wallet {
     };
     this.spentAtomic += terms.amountAtomic;
     this.receipts.push(receipt);
+    await appendHistory({ ...this.identity, url, access: "paid", amountAtomic: receipt.amountAtomic.toString(), transaction: receipt.transaction, network: receipt.network, reader: presented?.reader ?? null });
     return { res: paid, terms, receipt, declined: null, freeRead: null };
   }
 }

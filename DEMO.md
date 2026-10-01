@@ -73,15 +73,16 @@ Two identifiers for the same person. Same issuer prefix, then nothing in common.
 
 Point to make: stable where the reader wants continuity, unlinkable where they do not. A wallet address and an email address both fail this test.
 
-## Act 5b. The issuer's side
+## Act 5b. Who read what, where
 
 ```bash
-pnpm baselayer people                 # the fixture people, including today's
-pnpm baselayer audit $PERSON          # registration, then one issuance per publisher
-pnpm personas                         # the same person as each publisher sees them
+pnpm report --as $PERSON              # the reader's list, each publisher's half, the issuer's half
+pnpm baselayer audit $PERSON          # the issuer's log: registration, then one issuance per publisher
 ```
 
-Point to make: three parties, three views. The issuer knows who the person is and which publishers it minted for, not what they read. Each publisher knows what an anonymous regular read, not who they are. The reader holds the only keys.
+The report is the demo's thesis on one screen. Top: everything this person read across both sites, with what each cost, which only the reader can list. Middle: what each publisher can say, a pseudonym with counts and the pieces read there, and no column that joins the two tables. Bottom: Baselayer knows the person is verified and which publishers it minted for, not a single title.
+
+Point to make: three parties, three views, and the complete one belongs to the person.
 
 Optional twist, if there is time: `pnpm baselayer revoke <jti>` on one of today's credentials, wait a few minutes for the status list, and read again. The publisher refuses with `REVOKED` and the agent mints afresh.
 

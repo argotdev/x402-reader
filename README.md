@@ -78,6 +78,16 @@ pnpm personas                                  # every persona: verification, ag
 
 `pnpm personas` matches each persona's identifiers against the readers tables of the publishers in `PUBLISHERS` (default: both demo sites), so you can see, per person, per site: free reads used, paid reads, wallets. No names cross that line in either direction.
 
+## Who read what, where
+
+```bash
+pnpm report --as alice
+```
+
+Three views of one person, side by side. First the reader's own history: every piece alice read, grouped by publisher, with how each was paid for (free to all, free read n of m as a recognised reader, or paid with a transaction link). Then what each publisher can report about her pseudonym there: counts and the pieces read at that site, from its public readers table and ledger. Then what Baselayer holds: that she is verified and which publishers credentials were minted for, with no titles.
+
+The point of the layout is who can produce which view. Only the reader can produce the first, because only it knows which pseudonym is hers at each site. Each publisher can produce its own row and nothing more. The issuer can produce neither. History is kept in `.kya/history/<person>.jsonl`, one line per read, by both `pnpm ask` and `pnpm read`.
+
 ## The issuer's view
 
 `pnpm baselayer` shows what Baselayer holds for this organisation. Needs `BASELAYER_API_KEY`; the console at <https://console.baselayer.com> shows the same, once the environment switch is set to Sandbox.
@@ -105,6 +115,8 @@ pnpm balance [0xAddress]    # USDC and ETH balance on Base Sepolia
 ```
 ask.ts          the agent: system prompt, three tools, the tool-runner loop
 personas.ts     the roster, --as/--agent parsing, and the pnpm personas listing
+history.ts      the reader's own record of what it read
+report.ts       who read what, where: reader, publishers, issuer side by side
 baselayer.ts    the issuer's view: people, credentials, audit log, revocation
 paid-fetch.ts   Wallet: a fetch that identifies itself, takes free reads, pays 402s within a budget, keeps receipts
 kya.ts          Reader: the Baselayer identity, agent key, per-publisher credentials, key binding
